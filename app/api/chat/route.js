@@ -208,7 +208,7 @@ async function callGPT(systemPrompt, userMessage, leadsContext = '', history = [
     messages.push({ role: 'user', content: userMessage })
     
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4.1-mini',
       messages,
       temperature: 0.3,
       max_tokens: 1000
@@ -458,9 +458,11 @@ REGRAS:
     const namePatterns = [
       /(?:quem\s+(?:e|é)\s+(?:o\s+|a\s+)?)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
       /(?:dados?|perfil|informacoes?|detalhes?)\s+(?:d[oa]\s+)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
-      /(?:tem|existe|temos)\s+(?:algum\s+)?(?:lead\s+)?chamad[oa]\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      /(?:tem|existe|temos|teria|ha|há|voce\s+tem|você\s+tem|voce\s+teria|você\s+teria)\s+(?:algum\s+)?(?:lead\s+)?(?:chamad[oa]\s+|com\s+(?:o\s+)?nome\s+)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      /(?:tem|existe|temos|teria)\s+(?:algum\s+)?(?:lead\s+)?chamad[oa]\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
       /(?:buscar|procurar|encontrar|achar)\s+(?:lead\s+)?(?:chamad[oa]\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
-      /lead\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i
+      /lead\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      /com\s+(?:o\s+)?nome\s+(?:de\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i
     ]
     
     for (const pattern of namePatterns) {
