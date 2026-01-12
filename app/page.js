@@ -91,7 +91,6 @@ export default function Home() {
         <div className="sidebar-header">
           <div className="sidebar-logo">
             <span>Z</span>
-            Lead Intelligence
           </div>
         </div>
 
