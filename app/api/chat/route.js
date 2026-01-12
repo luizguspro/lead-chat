@@ -106,13 +106,24 @@ function formatLeadForContext(lead) {
   const redes = lead.redes_sociais || {}
   const meta = lead.meta || {}
   const abordagem = lead.abordagem || {}
+  const perfil = lead.perfil_psicologico || {}
+  const padroes = lead.padroes_comportamento || {}
+  const rede = lead.rede_influencia || {}
   
   let info = []
   
+  // Dados Básicos
+  info.push('=== DADOS BÁSICOS ===')
   if (dados.nome_completo) info.push(`Nome: ${dados.nome_completo}`)
+  if (dados.nome_social) info.push(`Nome Social: ${dados.nome_social}`)
   if (dados.empresa) info.push(`Empresa: ${dados.empresa}`)
   if (dados.cargo) info.push(`Cargo: ${dados.cargo}`)
   if (dados.segmento) info.push(`Segmento: ${dados.segmento}`)
+  if (dados.tempo_empresa) info.push(`Tempo na Empresa: ${dados.tempo_empresa}`)
+  if (meta.score_completude) info.push(`Score de Completude: ${meta.score_completude}`)
+  
+  // Contato
+  info.push('\n=== CONTATO ===')
   if (contato.email_corporativo) info.push(`Email Corporativo: ${contato.email_corporativo}`)
   if (contato.email_pessoal) info.push(`Email Pessoal: ${contato.email_pessoal}`)
   if (contato.telefone_direto) info.push(`Telefone: ${contato.telefone_direto}`)
@@ -120,8 +131,44 @@ function formatLeadForContext(lead) {
   if (contato.cidade && contato.estado) info.push(`Localização: ${contato.cidade}/${contato.estado}`)
   if (redes.linkedin) info.push(`LinkedIn: ${redes.linkedin}`)
   if (redes.instagram) info.push(`Instagram: ${redes.instagram}`)
-  if (meta.score_completude) info.push(`Score de Completude: ${meta.score_completude}`)
-  if (abordagem.script_abertura) info.push(`Script de Abertura: ${abordagem.script_abertura}`)
+  if (redes.site_empresa) info.push(`Site: ${redes.site_empresa}`)
+  
+  // Perfil Psicológico (se houver)
+  if (perfil.resumo || perfil.personalidade || perfil.motivacoes?.length > 0) {
+    info.push('\n=== PERFIL PSICOLÓGICO ===')
+    if (perfil.resumo) info.push(`Resumo: ${perfil.resumo}`)
+    if (perfil.personalidade) info.push(`Personalidade: ${perfil.personalidade}`)
+    if (perfil.motivacoes?.length > 0) info.push(`Motivações: ${perfil.motivacoes.join(', ')}`)
+    if (perfil.ego_triggers?.length > 0) info.push(`Gatilhos de Ego: ${perfil.ego_triggers.join('; ')}`)
+    if (perfil.como_decide) info.push(`Como Decide: ${perfil.como_decide}`)
+  }
+  
+  // Padrões de Comportamento
+  if (padroes.estilo_comunicacao || padroes.citacoes_marcantes?.length > 0) {
+    info.push('\n=== COMPORTAMENTO ===')
+    if (padroes.estilo_comunicacao) info.push(`Estilo de Comunicação: ${padroes.estilo_comunicacao}`)
+    if (padroes.temas_recorrentes?.length > 0) info.push(`Temas Recorrentes: ${padroes.temas_recorrentes.join(', ')}`)
+    if (padroes.citacoes_marcantes?.length > 0) info.push(`Citações: "${padroes.citacoes_marcantes.join('" | "')}"`)
+  }
+  
+  // Abordagem
+  if (abordagem.script_abertura || abordagem.gatilhos?.length > 0) {
+    info.push('\n=== ESTRATÉGIA DE ABORDAGEM ===')
+    if (abordagem.canal_preferido) info.push(`Canal Preferido: ${abordagem.canal_preferido}`)
+    if (abordagem.melhor_horario) info.push(`Melhor Horário: ${abordagem.melhor_horario}`)
+    if (abordagem.gatilhos?.length > 0) info.push(`Gatilhos para Usar: ${abordagem.gatilhos.join('; ')}`)
+    if (abordagem.o_que_evitar?.length > 0) info.push(`O Que Evitar: ${abordagem.o_que_evitar.join('; ')}`)
+    if (abordagem.script_abertura) info.push(`\nScript de Abertura Sugerido:\n"${abordagem.script_abertura}"`)
+    if (abordagem.objecoes_provaveis?.length > 0) info.push(`\nObjeções Prováveis: ${abordagem.objecoes_provaveis.join('; ')}`)
+  }
+  
+  // Rede de Influência
+  if (rede.comunidades?.length > 0 || rede.quem_pode_apresentar?.length > 0) {
+    info.push('\n=== REDE DE INFLUÊNCIA ===')
+    if (rede.comunidades?.length > 0) info.push(`Comunidades: ${rede.comunidades.join(', ')}`)
+    if (rede.quem_pode_apresentar?.length > 0) info.push(`Quem Pode Apresentar: ${rede.quem_pode_apresentar.join('; ')}`)
+    if (rede.circulo_proximo?.length > 0) info.push(`Círculo Próximo: ${rede.circulo_proximo.join('; ')}`)
+  }
   
   return info.join('\n')
 }
