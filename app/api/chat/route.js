@@ -456,9 +456,11 @@ REGRAS:
     
     // 9. BUSCA POR NOME (quem é, dados de, perfil de, etc)
     const namePatterns = [
-      /(?:quem\s+(?:e|é)\s+(?:o\s+|a\s+)?|dados?\s+(?:d[oa]\s+)?|perfil\s+(?:d[oa]\s+)?|informacoes?\s+(?:d[oa]\s+)?|detalhes?\s+(?:d[oa]\s+)?|lead\s+)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
-      /(?:tem|existe|temos)\s+(?:algum\s+)?(?:lead\s+)?(?:chamad[oa]\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
-      /(?:buscar|procurar|encontrar|achar)\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i
+      /(?:quem\s+(?:e|é)\s+(?:o\s+|a\s+)?)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      /(?:dados?|perfil|informacoes?|detalhes?)\s+(?:d[oa]\s+)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      /(?:tem|existe|temos)\s+(?:algum\s+)?(?:lead\s+)?chamad[oa]\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      /(?:buscar|procurar|encontrar|achar)\s+(?:lead\s+)?(?:chamad[oa]\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      /lead\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i
     ]
     
     for (const pattern of namePatterns) {
