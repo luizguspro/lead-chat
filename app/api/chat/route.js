@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
 // Import dos leads - adicione novos imports aqui
-import leadsData from '@/data/leads.json'
+import leadsData from '../../../data/leads.json'
+
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
