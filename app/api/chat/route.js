@@ -6,13 +6,15 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
 
-// Carrega leads
+// ============================================
+// CARREGAMENTO E PROCESSAMENTO DE LEADS
+// ============================================
+
 function loadAllLeads() {
   if (Array.isArray(leadsData)) return leadsData
   return [leadsData]
 }
 
-// Stats
 function getStats(leads) {
   return {
     total: leads.length,
@@ -21,122 +23,147 @@ function getStats(leads) {
     ).length,
     withPhone: leads.filter(l => 
       l.contato?.telefone_direto || l.contato?.whatsapp || l.contato?.telefone
-    ).length
+    ).length,
+    withLinkedIn: leads.filter(l => l.redes_sociais?.linkedin).length,
+    cities: [...new Set(leads.map(l => l.contato?.cidade).filter(Boolean))],
+    segments: [...new Set(leads.map(l => l.dados_basicos?.segmento).filter(Boolean))]
   }
 }
 
-// Busca por nome específico
+// ============================================
+// FUNÇÕES DE BUSCA (ANTI-ALUCINAÇÃO)
+// ============================================
+
+// Normaliza texto para busca (remove acentos, lowercase)
+function normalizeText(text) {
+  if (!text) return ''
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+// Busca por nome - mais precisa
 function searchByName(leads, name) {
-  const q = name.toLowerCase().trim()
+  const normalizedQuery = normalizeText(name)
+  const queryParts = normalizedQuery.split(/\s+/).filter(p => p.length > 1)
+  
   return leads.filter(lead => {
-    const nomeCompleto = (lead.dados_basicos?.nome_completo || '').toLowerCase()
-    const nomeSocial = (lead.dados_basicos?.nome_social || '').toLowerCase()
-    return nomeCompleto.includes(q) || nomeSocial.includes(q)
+    const nomeCompleto = normalizeText(lead.dados_basicos?.nome_completo)
+    const nomeSocial = normalizeText(lead.dados_basicos?.nome_social)
+    const empresa = normalizeText(lead.dados_basicos?.empresa)
+    
+    // Busca exata ou parcial no nome
+    if (nomeCompleto && queryParts.every(part => nomeCompleto.includes(part))) return true
+    if (nomeSocial && queryParts.every(part => nomeSocial.includes(part))) return true
+    
+    // Busca também na empresa se o nome não encontrar
+    if (empresa && queryParts.every(part => empresa.includes(part))) return true
+    
+    return false
   })
 }
 
-// Busca por termo geral (segmento, cidade, empresa, etc)
+// Busca por cidade
+function searchByCity(leads, city) {
+  const normalizedCity = normalizeText(city)
+  return leads.filter(lead => {
+    const leadCity = normalizeText(lead.contato?.cidade)
+    return leadCity && leadCity.includes(normalizedCity)
+  })
+}
+
+// Busca por segmento
+function searchBySegment(leads, segment) {
+  const normalizedSegment = normalizeText(segment)
+  return leads.filter(lead => {
+    const leadSegment = normalizeText(lead.dados_basicos?.segmento)
+    return leadSegment && leadSegment.includes(normalizedSegment)
+  })
+}
+
+// Busca geral em todos os campos
 function searchGeneral(leads, query) {
-  const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2)
-  if (terms.length === 0) return []
+  const normalizedQuery = normalizeText(query)
+  const queryParts = normalizedQuery.split(/\s+/).filter(p => p.length > 2)
+  
+  if (queryParts.length === 0) return []
   
   return leads.filter(lead => {
-    const searchable = JSON.stringify(lead).toLowerCase()
-    return terms.some(term => searchable.includes(term))
+    const searchableText = normalizeText(JSON.stringify(lead))
+    return queryParts.some(part => searchableText.includes(part))
   })
 }
 
-// Classifica a intenção da mensagem
-function classifyIntent(message) {
-  const msg = message.toLowerCase().trim()
+// ============================================
+// FORMATAÇÃO DE LEADS PARA CONTEXTO DA IA
+// ============================================
+
+function formatLeadForContext(lead) {
+  const dados = lead.dados_basicos || {}
+  const contato = lead.contato || {}
+  const redes = lead.redes_sociais || {}
+  const meta = lead.meta || {}
+  const abordagem = lead.abordagem || {}
   
-  // Saudações
-  if (/^(oi|olá|ola|hey|hi|hello|bom dia|boa tarde|boa noite|e ai|eai|fala|salve)[\s!?.]*$/i.test(msg)) {
-    return { type: 'greeting' }
-  }
+  let info = []
   
-  // Ajuda
-  if (/^(ajuda|help|como funciona|o que voce faz|comandos)[\s!?.]*$/i.test(msg)) {
-    return { type: 'help' }
-  }
+  if (dados.nome_completo) info.push(`Nome: ${dados.nome_completo}`)
+  if (dados.empresa) info.push(`Empresa: ${dados.empresa}`)
+  if (dados.cargo) info.push(`Cargo: ${dados.cargo}`)
+  if (dados.segmento) info.push(`Segmento: ${dados.segmento}`)
+  if (contato.email_corporativo) info.push(`Email Corporativo: ${contato.email_corporativo}`)
+  if (contato.email_pessoal) info.push(`Email Pessoal: ${contato.email_pessoal}`)
+  if (contato.telefone_direto) info.push(`Telefone: ${contato.telefone_direto}`)
+  if (contato.whatsapp) info.push(`WhatsApp: ${contato.whatsapp}`)
+  if (contato.cidade && contato.estado) info.push(`Localização: ${contato.cidade}/${contato.estado}`)
+  if (redes.linkedin) info.push(`LinkedIn: ${redes.linkedin}`)
+  if (redes.instagram) info.push(`Instagram: ${redes.instagram}`)
+  if (meta.score_completude) info.push(`Score de Completude: ${meta.score_completude}`)
+  if (abordagem.script_abertura) info.push(`Script de Abertura: ${abordagem.script_abertura}`)
   
-  // Listar todos
-  if (msg.includes('listar todos') || msg.includes('todos os leads') || msg.includes('mostrar todos') || msg.includes('ver todos')) {
-    return { type: 'list_all' }
-  }
-  
-  // Exportar
-  if (msg.includes('exportar') || msg.includes('excel') || msg.includes('download') || msg.includes('baixar')) {
-    return { type: 'export', query: msg }
-  }
-  
-  // Quantos/total
-  if (msg.includes('quantos') || msg.includes('quantas') || msg.includes('total de') || msg.includes('quantidade')) {
-    // Extrai o que quer contar
-    const match = msg.match(/quantos?\s+leads?\s+(?:de\s+|relacionado\s+a\s+|sobre\s+)?(.+?)(?:\?|$)/i) ||
-                  msg.match(/quantos?\s+(.+?)(?:\?|$)/i)
-    return { type: 'count', query: match ? match[1].trim() : null }
-  }
-  
-  // Busca por nome (chamado, contato do, dados do, perfil do)
-  const namePatterns = [
-    /(?:lead|contato|dados?|perfil|informacoes?)\s+(?:d[oa]\s+)?["']?([a-záéíóúãõçê\s]+?)["']?(?:\?|$)/i,
-    /chamad[oa]\s+["']?([a-záéíóúãõçê\s]+?)["']?(?:\?|$)/i,
-    /quem\s+(?:e|é)\s+(?:o\s+|a\s+)?["']?([a-záéíóúãõçê\s]+?)["']?(?:\?|$)/i,
-    /(?:tem|existe)\s+(?:algum\s+)?(?:lead\s+)?(?:chamad[oa]\s+)?["']?([a-záéíóúãõçê]+)["']?(?:\?|$)/i,
-    /telefone\s+d[oa]\s+["']?([a-záéíóúãõçê\s]+?)["']?(?:\?|$)/i,
-    /email\s+d[oa]\s+["']?([a-záéíóúãõçê\s]+?)["']?(?:\?|$)/i,
-  ]
-  
-  for (const pattern of namePatterns) {
-    const match = message.match(pattern)
-    if (match && match[1] && match[1].trim().length > 1) {
-      return { type: 'search_name', name: match[1].trim() }
-    }
-  }
-  
-  // Busca por segmento/cidade/cargo
-  const segmentKeywords = ['publicidade', 'marketing', 'tecnologia', 'tech', 'software', 'jurídico', 'advocacia', 'advogado', 
-    'contabil', 'contador', 'financeiro', 'seguros', 'saude', 'saúde', 'consultoria', 'consultor', 'arquiteto', 'engenheiro']
-  const cityKeywords = ['florianópolis', 'florianopolis', 'floripa', 'são josé', 'sao jose', 'palhoça', 'palhoca', 
-    'curitiba', 'joinville', 'blumenau', 'itajaí', 'itajai']
-  
-  for (const kw of [...segmentKeywords, ...cityKeywords]) {
-    if (msg.includes(kw)) {
-      return { type: 'search_general', query: kw }
-    }
-  }
-  
-  // Criar email/abordagem
-  if (msg.includes('criar email') || msg.includes('escrever email') || msg.includes('email de abordagem') || 
-      msg.includes('mensagem para') || msg.includes('abordagem para')) {
-    const nameMatch = msg.match(/(?:para|do|da)\s+["']?([a-záéíóúãõçê\s]+?)["']?(?:\?|$)/i)
-    return { type: 'create_email', name: nameMatch ? nameMatch[1].trim() : null }
-  }
-  
-  // Fallback: tenta interpretar como busca
-  return { type: 'general_query', query: message }
+  return info.join('\n')
 }
 
-// Gera Excel
+function formatLeadsForContext(leads, maxLeads = 10) {
+  return leads.slice(0, maxLeads).map((lead, idx) => {
+    return `--- Lead ${idx + 1} ---\n${formatLeadForContext(lead)}`
+  }).join('\n\n')
+}
+
+// ============================================
+// GERAÇÃO DE EXCEL
+// ============================================
+
 async function generateExcel(leads) {
   const XLSX = await import('xlsx')
   
   const rows = leads.map(lead => ({
-    Nome: lead.dados_basicos?.nome_completo || '',
+    Nome: lead.dados_basicos?.nome_completo || lead.dados_basicos?.nome_social || '',
     Empresa: lead.dados_basicos?.empresa || '',
     Cargo: lead.dados_basicos?.cargo || '',
-    Email: lead.contato?.email_corporativo || lead.contato?.email_pessoal || '',
-    Telefone: lead.contato?.telefone_direto || lead.contato?.whatsapp || '',
-    LinkedIn: lead.redes_sociais?.linkedin || '',
-    Instagram: lead.redes_sociais?.instagram || '',
+    Segmento: lead.dados_basicos?.segmento || '',
+    'Email Corporativo': lead.contato?.email_corporativo || '',
+    'Email Pessoal': lead.contato?.email_pessoal || '',
+    Telefone: lead.contato?.telefone_direto || '',
+    WhatsApp: lead.contato?.whatsapp || '',
     Cidade: lead.contato?.cidade || '',
     Estado: lead.contato?.estado || '',
-    Segmento: lead.dados_basicos?.segmento || '',
+    LinkedIn: lead.redes_sociais?.linkedin || '',
+    Instagram: lead.redes_sociais?.instagram || '',
     Score: lead.meta?.score_completude || ''
   }))
   
   const ws = XLSX.utils.json_to_sheet(rows)
+  
+  // Ajustar largura das colunas
+  ws['!cols'] = [
+    { wch: 25 }, { wch: 30 }, { wch: 20 }, { wch: 25 },
+    { wch: 30 }, { wch: 30 }, { wch: 15 }, { wch: 15 },
+    { wch: 15 }, { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 8 }
+  ]
+  
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Leads')
   
@@ -149,24 +176,42 @@ async function generateExcel(leads) {
   }
 }
 
-// Chama GPT quando necessário
-async function callGPT(systemPrompt, userMessage, context = '') {
+// ============================================
+// INTEGRAÇÃO COM OPENAI (ANTI-ALUCINAÇÃO)
+// ============================================
+
+async function callGPT(systemPrompt, userMessage, leadsContext = '', history = []) {
   if (!process.env.OPENAI_API_KEY) return null
   
   try {
     const messages = [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: systemPrompt }
     ]
-    if (context) {
-      messages.push({ role: 'system', content: context })
+    
+    // Adiciona contexto dos leads se houver
+    if (leadsContext) {
+      messages.push({ 
+        role: 'system', 
+        content: `DADOS DOS LEADS ENCONTRADOS NA BASE (USE APENAS ESTAS INFORMAÇÕES):\n\n${leadsContext}` 
+      })
     }
+    
+    // Adiciona histórico recente (últimas 6 mensagens)
+    const recentHistory = history.slice(-6)
+    for (const msg of recentHistory) {
+      messages.push({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      })
+    }
+    
     messages.push({ role: 'user', content: userMessage })
     
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages,
       temperature: 0.3,
-      max_tokens: 800
+      max_tokens: 1000
     })
     
     return completion.choices[0]?.message?.content || null
@@ -176,9 +221,40 @@ async function callGPT(systemPrompt, userMessage, context = '') {
   }
 }
 
+// ============================================
+// SISTEMA PRINCIPAL DE PROCESSAMENTO
+// ============================================
+
+const SYSTEM_PROMPT = `Você é o Z, um assistente de vendas inteligente e profissional. Você ajuda a equipe de vendas a gerenciar e interagir com leads.
+
+REGRAS IMPORTANTES (ANTI-ALUCINAÇÃO):
+1. NUNCA invente informações sobre leads. Use APENAS os dados fornecidos no contexto.
+2. Se não encontrar um lead ou informação, diga claramente que não encontrou.
+3. Seja preciso com nomes, emails, telefones - não invente dados.
+4. Se o usuário perguntar sobre um lead que não está no contexto, diga que não encontrou na base.
+5. Formate suas respostas de forma clara e profissional.
+6. Use **negrito** para destacar informações importantes.
+7. Seja direto e objetivo, sem enrolação.
+8. Quando listar leads, inclua as informações mais relevantes de cada um.
+9. Para criar emails de abordagem, use os dados reais do lead fornecido.
+10. Nunca diga que vai "verificar" ou "consultar" - você já tem acesso aos dados no contexto.
+
+CAPACIDADES:
+- Buscar leads por nome, cidade, segmento ou qualquer critério
+- Mostrar detalhes completos de um lead específico
+- Criar emails de abordagem personalizados
+- Analisar perfis de leads
+- Exportar dados para Excel
+- Responder perguntas sobre a base de leads
+
+FORMATO DE RESPOSTA:
+- Use markdown para formatação
+- Destaque informações importantes em **negrito**
+- Seja conciso mas completo`
+
 export async function POST(request) {
   try {
-    const { message, history } = await request.json()
+    const { message, history = [] } = await request.json()
     
     if (!message) {
       return NextResponse.json({ error: 'Mensagem vazia' }, { status: 400 })
@@ -187,140 +263,299 @@ export async function POST(request) {
     const leads = loadAllLeads()
     const stats = getStats(leads)
     
-    // Stats interno
+    // Comando interno para stats
     if (message === '__stats__') {
       return NextResponse.json({ stats })
     }
     
-    // Classifica intenção
-    const intent = classifyIntent(message)
+    const msg = message.toLowerCase().trim()
+    const normalizedMsg = normalizeText(message)
     
-    switch (intent.type) {
+    // ============================================
+    // DETECÇÃO DE INTENÇÕES
+    // ============================================
+    
+    // 1. SAUDAÇÕES
+    if (/^(oi|olá|ola|hey|hi|hello|bom dia|boa tarde|boa noite|e ai|eai|fala|salve|opa)[\s!?.]*$/i.test(msg)) {
+      return NextResponse.json({
+        response: `Olá! 👋 Sou o **Z**, seu assistente de vendas.\n\nTenho **${leads.length} leads** na base, sendo **${stats.withEmail}** com email e **${stats.withPhone}** com telefone.\n\nComo posso ajudar? Você pode:\n- Buscar leads por nome, cidade ou segmento\n- Pedir detalhes de um lead específico\n- Criar emails de abordagem\n- Exportar dados para Excel`,
+        leads: []
+      })
+    }
+    
+    // 2. AJUDA
+    if (/^(ajuda|help|como funciona|o que voce faz|comandos|menu)[\s!?.]*$/i.test(msg)) {
+      return NextResponse.json({
+        response: `## 📋 Como posso ajudar\n\n**Buscar Leads:**\n- "Quem é João Silva?"\n- "Leads de Florianópolis"\n- "Leads do segmento imobiliário"\n\n**Informações:**\n- "Qual o telefone do Anderson?"\n- "Email da Maria"\n- "Detalhes do lead X"\n\n**Ações:**\n- "Criar email de abordagem para João"\n- "Exportar leads para Excel"\n- "Quantos leads temos?"\n\n**Estatísticas:**\n- Total: **${leads.length}** leads\n- Com email: **${stats.withEmail}**\n- Com telefone: **${stats.withPhone}**`,
+        leads: []
+      })
+    }
+    
+    // 3. LISTAR TODOS
+    if (msg.includes('listar todos') || msg.includes('todos os leads') || msg.includes('mostrar todos') || msg.includes('ver todos')) {
+      const leadsToShow = leads.slice(0, 15)
+      return NextResponse.json({
+        response: `📋 **Base completa: ${leads.length} leads**\n\nMostrando os primeiros ${leadsToShow.length}:`,
+        leads: leadsToShow
+      })
+    }
+    
+    // 4. EXPORTAR
+    if (msg.includes('exportar') || msg.includes('excel') || msg.includes('download') || msg.includes('baixar')) {
+      let leadsToExport = leads
       
-      case 'greeting':
-        return NextResponse.json({
-          response: `Ola! Sou o Z, seu assistente de vendas. Tenho **${leads.length} leads** na base. Como posso ajudar?`,
-          leads: []
-        })
+      // Verifica se quer exportar filtrado
+      const cityMatch = msg.match(/(?:de|da)\s+(florianopolis|floripa|sao jose|palhoca|curitiba|joinville)/i)
+      if (cityMatch) {
+        leadsToExport = searchByCity(leads, cityMatch[1])
+      }
       
-      case 'help':
+      if (leadsToExport.length === 0) {
         return NextResponse.json({
-          response: `Posso ajudar com:\n\n- **Buscar leads**: "Voce tem algum lead chamado João?"\n- **Filtrar por segmento**: "Leads de publicidade"\n- **Filtrar por cidade**: "Quem é de Florianópolis?"\n- **Contar**: "Quantos leads de tecnologia?"\n- **Exportar**: "Exportar para Excel"\n- **Criar abordagem**: "Criar email para João Silva"`,
-          leads: []
-        })
-      
-      case 'list_all':
-        return NextResponse.json({
-          response: `Base completa: **${leads.length} leads**. Mostrando os primeiros:`,
-          leads: leads.slice(0, 10)
-        })
-      
-      case 'export': {
-        const file = await generateExcel(leads)
-        return NextResponse.json({
-          response: `Exportacao concluida. **${leads.length} leads** prontos para download.`,
-          file,
+          response: `Não encontrei leads para exportar com esse filtro.`,
           leads: []
         })
       }
       
-      case 'count': {
-        if (!intent.query) {
-          return NextResponse.json({
-            response: `Total na base: **${leads.length} leads**\n- Com email: **${stats.withEmail}**\n- Com telefone: **${stats.withPhone}**`,
-            leads: []
-          })
-        }
-        const found = searchGeneral(leads, intent.query)
+      const file = await generateExcel(leadsToExport)
+      return NextResponse.json({
+        response: `✅ **Exportação concluída!**\n\n**${leadsToExport.length} leads** prontos para download.`,
+        file,
+        leads: []
+      })
+    }
+    
+    // 5. ESTATÍSTICAS / QUANTOS
+    if (msg.includes('quantos') || msg.includes('quantas') || msg.includes('total de') || msg.includes('quantidade') || msg.includes('estatisticas') || msg.includes('resumo')) {
+      // Verifica se quer contar algo específico
+      const cityMatch = msg.match(/(?:de|da|em)\s+(florianopolis|floripa|sao jose|palhoca|curitiba|joinville)/i)
+      const segmentMatch = msg.match(/(?:de|do|da)\s+(imobiliario|financ|seguro|saude|tecnologia|marketing|juridico|construcao)/i)
+      
+      if (cityMatch) {
+        const found = searchByCity(leads, cityMatch[1])
         return NextResponse.json({
-          response: `Encontrei **${found.length} leads** relacionados a "${intent.query}".`,
+          response: `📊 Encontrei **${found.length} leads** em ${cityMatch[1]}.`,
           leads: found.slice(0, 5)
         })
       }
       
-      case 'search_name': {
-        const found = searchByName(leads, intent.name)
-        if (found.length === 0) {
-          return NextResponse.json({
-            response: `Nao encontrei nenhum lead chamado "${intent.name}" na base.`,
-            leads: []
-          })
-        }
+      if (segmentMatch) {
+        const found = searchBySegment(leads, segmentMatch[1])
         return NextResponse.json({
-          response: `Encontrei **${found.length} lead(s)** com nome "${intent.name}":`,
+          response: `📊 Encontrei **${found.length} leads** no segmento "${segmentMatch[1]}".`,
           leads: found.slice(0, 5)
         })
       }
       
-      case 'search_general': {
-        const found = searchGeneral(leads, intent.query)
-        if (found.length === 0) {
-          return NextResponse.json({
-            response: `Nao encontrei leads relacionados a "${intent.query}".`,
-            leads: []
-          })
-        }
-        return NextResponse.json({
-          response: `Encontrei **${found.length} leads** relacionados a "${intent.query}":`,
-          leads: found.slice(0, 5)
-        })
-      }
-      
-      case 'create_email': {
-        if (!intent.name) {
-          return NextResponse.json({
-            response: `Para criar um email, me diz o nome do lead. Ex: "Criar email para João Silva"`,
-            leads: []
-          })
-        }
-        const found = searchByName(leads, intent.name)
-        if (found.length === 0) {
-          return NextResponse.json({
-            response: `Nao encontrei lead chamado "${intent.name}" para criar o email.`,
-            leads: []
-          })
-        }
-        
-        const lead = found[0]
-        const prompt = `Crie um email de abordagem comercial personalizado. Seja direto, profissional, sem emojis. Max 150 palavras.`
-        const context = `Lead:\n${JSON.stringify(lead, null, 2)}`
-        
-        const emailContent = await callGPT(prompt, `Criar email de abordagem para ${lead.dados_basicos?.nome_completo}`, context)
-        
-        return NextResponse.json({
-          response: emailContent || `Lead encontrado: **${lead.dados_basicos?.nome_completo}**. Configure a API da OpenAI para gerar emails personalizados.`,
-          leads: [lead]
-        })
-      }
-      
-      case 'general_query':
-      default: {
-        // Tenta busca geral
-        const found = searchGeneral(leads, intent.query || message)
-        
+      return NextResponse.json({
+        response: `## 📊 Estatísticas da Base\n\n| Métrica | Valor |\n|---------|-------|\n| **Total de Leads** | ${leads.length} |\n| Com Email | ${stats.withEmail} |\n| Com Telefone | ${stats.withPhone} |\n| Com LinkedIn | ${stats.withLinkedIn} |\n\n**Principais Cidades:** ${stats.cities.slice(0, 5).join(', ')}`,
+        leads: []
+      })
+    }
+    
+    // 6. BUSCA POR CIDADE
+    const cityKeywords = ['florianopolis', 'floripa', 'sao jose', 'palhoca', 'curitiba', 'joinville', 'blumenau', 'itajai', 'biguacu', 'sombrio', 'imbituba']
+    for (const city of cityKeywords) {
+      if (normalizedMsg.includes(city)) {
+        const found = searchByCity(leads, city)
         if (found.length > 0) {
           return NextResponse.json({
-            response: `Encontrei **${found.length} leads** relacionados:`,
-            leads: found.slice(0, 5)
+            response: `🏙️ Encontrei **${found.length} leads** em ${city.charAt(0).toUpperCase() + city.slice(1)}:`,
+            leads: found.slice(0, 10)
           })
         }
-        
-        // Se nao achou nada, usa GPT pra responder
-        const gptResponse = await callGPT(
-          `Voce e Z, assistente de vendas. Responda de forma util e direta. Sem emojis. Se a pergunta for sobre leads e voce nao tiver info, sugira como o usuario pode buscar.`,
-          message,
-          `Total de leads na base: ${leads.length}`
-        )
-        
+      }
+    }
+    
+    // 7. CRIAR EMAIL DE ABORDAGEM
+    if (msg.includes('criar email') || msg.includes('escrever email') || msg.includes('email de abordagem') || 
+        msg.includes('email para') || msg.includes('abordagem para') || msg.includes('mensagem para')) {
+      
+      // Extrai o nome do lead
+      const nameMatch = message.match(/(?:para|do|da)\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$|\.)/i)
+      
+      if (!nameMatch || !nameMatch[1]) {
         return NextResponse.json({
-          response: gptResponse || `Nao entendi sua pergunta. Tente: "buscar [nome]", "leads de [cidade]", ou "exportar excel".`,
+          response: `Para criar um email de abordagem, preciso saber o nome do lead.\n\n**Exemplo:** "Criar email para João Silva"`,
           leads: []
+        })
+      }
+      
+      const searchName = nameMatch[1].trim()
+      const found = searchByName(leads, searchName)
+      
+      if (found.length === 0) {
+        return NextResponse.json({
+          response: `❌ Não encontrei nenhum lead chamado **"${searchName}"** na base.\n\nTente buscar por outro nome ou verifique a grafia.`,
+          leads: []
+        })
+      }
+      
+      const lead = found[0]
+      const leadContext = formatLeadForContext(lead)
+      
+      const emailPrompt = `Crie um email de abordagem comercial personalizado para este lead.
+
+REGRAS:
+- Use APENAS as informações fornecidas sobre o lead
+- Seja profissional e direto
+- Máximo 150 palavras
+- Não use emojis
+- Personalize com base no cargo, empresa e segmento do lead
+- Inclua uma proposta de valor clara
+- Termine com um call-to-action`
+
+      const emailContent = await callGPT(emailPrompt, `Criar email de abordagem para ${lead.dados_basicos?.nome_completo || lead.dados_basicos?.empresa}`, leadContext, history)
+      
+      if (emailContent) {
+        return NextResponse.json({
+          response: `## ✉️ Email de Abordagem\n\n**Para:** ${lead.dados_basicos?.nome_completo || 'Lead'}\n\n---\n\n${emailContent}`,
+          leads: [lead]
+        })
+      } else {
+        return NextResponse.json({
+          response: `Encontrei o lead **${lead.dados_basicos?.nome_completo || lead.dados_basicos?.empresa}**. Configure a API da OpenAI para gerar emails personalizados.`,
+          leads: [lead]
         })
       }
     }
     
+    // 8. BUSCA POR TELEFONE/EMAIL DE ALGUÉM
+    const contactMatch = message.match(/(?:qual\s+(?:o|e|é)\s+)?(?:telefone|email|contato|whatsapp)\s+(?:d[oa]\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i)
+    if (contactMatch && contactMatch[1]) {
+      const searchName = contactMatch[1].trim()
+      const found = searchByName(leads, searchName)
+      
+      if (found.length === 0) {
+        return NextResponse.json({
+          response: `❌ Não encontrei nenhum lead chamado **"${searchName}"** na base.`,
+          leads: []
+        })
+      }
+      
+      const lead = found[0]
+      const contato = lead.contato || {}
+      const nome = lead.dados_basicos?.nome_completo || lead.dados_basicos?.empresa || 'Lead'
+      
+      let contactInfo = `## 📞 Contato de ${nome}\n\n`
+      if (contato.email_corporativo) contactInfo += `**Email Corporativo:** ${contato.email_corporativo}\n`
+      if (contato.email_pessoal) contactInfo += `**Email Pessoal:** ${contato.email_pessoal}\n`
+      if (contato.telefone_direto) contactInfo += `**Telefone:** ${contato.telefone_direto}\n`
+      if (contato.whatsapp) contactInfo += `**WhatsApp:** ${contato.whatsapp}\n`
+      if (contato.telefone_empresa) contactInfo += `**Tel. Empresa:** ${contato.telefone_empresa}\n`
+      
+      if (contactInfo === `## 📞 Contato de ${nome}\n\n`) {
+        contactInfo += `_Sem informações de contato disponíveis para este lead._`
+      }
+      
+      return NextResponse.json({
+        response: contactInfo,
+        leads: [lead]
+      })
+    }
+    
+    // 9. BUSCA POR NOME (quem é, dados de, perfil de, etc)
+    const namePatterns = [
+      /(?:quem\s+(?:e|é)\s+(?:o\s+|a\s+)?|dados?\s+(?:d[oa]\s+)?|perfil\s+(?:d[oa]\s+)?|informacoes?\s+(?:d[oa]\s+)?|detalhes?\s+(?:d[oa]\s+)?|lead\s+)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      /(?:tem|existe|temos)\s+(?:algum\s+)?(?:lead\s+)?(?:chamad[oa]\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      /(?:buscar|procurar|encontrar|achar)\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i
+    ]
+    
+    for (const pattern of namePatterns) {
+      const match = message.match(pattern)
+      if (match && match[1] && match[1].trim().length > 2) {
+        const searchName = match[1].trim()
+        
+        // Ignora se for uma cidade conhecida
+        if (cityKeywords.some(c => normalizeText(searchName).includes(c))) continue
+        
+        const found = searchByName(leads, searchName)
+        
+        if (found.length === 0) {
+          return NextResponse.json({
+            response: `❌ Não encontrei nenhum lead chamado **"${searchName}"** na base.\n\nTente:\n- Verificar a grafia do nome\n- Buscar por parte do nome\n- Listar todos os leads`,
+            leads: []
+          })
+        }
+        
+        return NextResponse.json({
+          response: `✅ Encontrei **${found.length} lead(s)** para "${searchName}":`,
+          leads: found.slice(0, 5)
+        })
+      }
+    }
+    
+    // 10. BUSCA POR SEGMENTO
+    const segmentKeywords = ['imobiliario', 'financ', 'seguro', 'saude', 'tecnologia', 'tech', 'software', 
+      'marketing', 'publicidade', 'juridico', 'advocacia', 'contabil', 'construcao', 'automotivo']
+    
+    for (const segment of segmentKeywords) {
+      if (normalizedMsg.includes(segment)) {
+        const found = searchBySegment(leads, segment)
+        if (found.length > 0) {
+          return NextResponse.json({
+            response: `🏢 Encontrei **${found.length} leads** no segmento relacionado a "${segment}":`,
+            leads: found.slice(0, 10)
+          })
+        }
+      }
+    }
+    
+    // 11. FALLBACK - USA GPT COM CONTEXTO DOS LEADS
+    // Primeiro tenta uma busca geral
+    const generalResults = searchGeneral(leads, message)
+    
+    if (generalResults.length > 0) {
+      // Se encontrou algo, usa GPT para formatar a resposta
+      const leadsContext = formatLeadsForContext(generalResults)
+      
+      const gptResponse = await callGPT(
+        SYSTEM_PROMPT,
+        message,
+        leadsContext,
+        history
+      )
+      
+      if (gptResponse) {
+        return NextResponse.json({
+          response: gptResponse,
+          leads: generalResults.slice(0, 5)
+        })
+      }
+      
+      return NextResponse.json({
+        response: `Encontrei **${generalResults.length} leads** relacionados à sua busca:`,
+        leads: generalResults.slice(0, 5)
+      })
+    }
+    
+    // Se não encontrou nada, usa GPT para responder de forma útil
+    const statsContext = `Base de dados: ${leads.length} leads total, ${stats.withEmail} com email, ${stats.withPhone} com telefone. Cidades: ${stats.cities.slice(0, 5).join(', ')}.`
+    
+    const gptResponse = await callGPT(
+      SYSTEM_PROMPT + '\n\nIMPORTANTE: Não há leads correspondentes à busca do usuário. Informe isso claramente e sugira alternativas.',
+      message,
+      statsContext,
+      history
+    )
+    
+    if (gptResponse) {
+      return NextResponse.json({
+        response: gptResponse,
+        leads: []
+      })
+    }
+    
+    // Resposta padrão se GPT não estiver disponível
+    return NextResponse.json({
+      response: `Não encontrei resultados para sua busca.\n\n**Tente:**\n- Buscar por nome: "Quem é João Silva?"\n- Buscar por cidade: "Leads de Florianópolis"\n- Listar todos: "Mostrar todos os leads"\n- Exportar: "Exportar para Excel"`,
+      leads: []
+    })
+    
   } catch (error) {
     console.error('Erro na API:', error)
-    return NextResponse.json({ error: `Erro: ${error.message}` }, { status: 500 })
+    return NextResponse.json({ 
+      error: `Erro ao processar sua solicitação. Por favor, tente novamente.` 
+    }, { status: 500 })
   }
 }

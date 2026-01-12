@@ -6,11 +6,18 @@ export default function Home() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [stats, setStats] = useState({ total: 0, withEmail: 0, withPhone: 0 })
+  const [stats, setStats] = useState({ total: 0, withEmail: 0, withPhone: 0, withLinkedIn: 0 })
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const chatRef = useRef(null)
+  const inputRef = useRef(null)
 
   useEffect(() => {
     fetchStats()
+    // Mensagem de boas-vindas
+    setMessages([{
+      role: 'assistant',
+      content: `Olá! 👋 Sou o **Z**, seu assistente de vendas inteligente.\n\nEstou pronto para ajudar você a gerenciar seus leads. O que deseja fazer?`
+    }])
   }, [])
 
   useEffect(() => {
@@ -28,7 +35,9 @@ export default function Home() {
       })
       const data = await res.json()
       if (data.stats) setStats(data.stats)
-    } catch (e) {}
+    } catch (e) {
+      console.error('Erro ao buscar stats:', e)
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -55,18 +64,23 @@ export default function Home() {
         leads: data.leads,
         file: data.file
       }])
+      
+      // Atualiza stats após cada interação
+      fetchStats()
     } catch (err) {
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: 'Erro de conexao. Verifique se o servidor esta rodando.' 
+        content: '❌ Erro de conexão. Verifique se o servidor está rodando.' 
       }])
     }
 
     setLoading(false)
+    inputRef.current?.focus()
   }
 
   const handleSuggestion = (text) => {
     setInput(text)
+    inputRef.current?.focus()
   }
 
   const handleKeyDown = (e) => {
@@ -76,64 +90,106 @@ export default function Home() {
     }
   }
 
+  const clearChat = () => {
+    setMessages([{
+      role: 'assistant',
+      content: `Chat limpo! 🧹\n\nComo posso ajudar?`
+    }])
+  }
+
   const formatContent = (content) => {
     if (!content) return ''
     return content
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/`(.*?)`/g, '<code>$1</code>')
+      .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+      .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+      .replace(/\|(.*)\|/g, (match) => {
+        // Detecta tabelas markdown simples
+        return match
+      })
       .replace(/\n/g, '<br/>')
+      .replace(/_([^_]+)_/g, '<em>$1</em>')
   }
+
+  const quickActions = [
+    { icon: '👥', label: 'Listar Leads', action: 'Listar todos os leads' },
+    { icon: '📊', label: 'Estatísticas', action: 'Mostrar estatísticas da base' },
+    { icon: '📥', label: 'Exportar Excel', action: 'Exportar todos os leads para Excel' },
+    { icon: '🏙️', label: 'Por Cidade', action: 'Leads de Florianópolis' },
+  ]
 
   return (
     <div className="app">
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <span>Z</span>
+            <div className="logo-icon">Z</div>
+            <span className="logo-text">Lead Intelligence</span>
           </div>
+          <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12h18M3 6h18M3 18h18"/>
+            </svg>
+          </button>
         </div>
 
         <div className="sidebar-section">
-          <div className="sidebar-title">Menu</div>
-          <div className="sidebar-item active">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-            Chat
+          <div className="sidebar-title">Ações Rápidas</div>
+          {quickActions.map((action, idx) => (
+            <div 
+              key={idx} 
+              className="sidebar-item"
+              onClick={() => handleSuggestion(action.action)}
+            >
+              <span className="item-icon">{action.icon}</span>
+              <span className="item-label">{action.label}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-title">Busca Rápida</div>
+          <div className="sidebar-item" onClick={() => handleSuggestion('Quem é ')}>
+            <span className="item-icon">🔍</span>
+            <span className="item-label">Buscar por Nome</span>
           </div>
-          <div className="sidebar-item" onClick={() => setInput('Listar todos os leads')}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-            </svg>
-            Leads
+          <div className="sidebar-item" onClick={() => handleSuggestion('Criar email para ')}>
+            <span className="item-icon">✉️</span>
+            <span className="item-label">Criar Email</span>
           </div>
-          <div className="sidebar-item" onClick={() => setInput('Exportar todos os leads para Excel')}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            Exportar
+          <div className="sidebar-item" onClick={() => handleSuggestion('Qual o telefone do ')}>
+            <span className="item-icon">📞</span>
+            <span className="item-label">Buscar Contato</span>
           </div>
         </div>
 
         <div className="sidebar-stats">
-          <div className="sidebar-title">Base de Leads</div>
-          <div className="stat-row">
-            <span className="stat-label">Total</span>
-            <span className="stat-value">{stats.total}</span>
+          <div className="sidebar-title">📈 Base de Leads</div>
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-value">{stats.total}</div>
+              <div className="stat-label">Total</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value">{stats.withEmail}</div>
+              <div className="stat-label">Com Email</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value">{stats.withPhone}</div>
+              <div className="stat-label">Com Telefone</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value">{stats.withLinkedIn || 0}</div>
+              <div className="stat-label">LinkedIn</div>
+            </div>
           </div>
-          <div className="stat-row">
-            <span className="stat-label">Com email</span>
-            <span className="stat-value">{stats.withEmail}</span>
-          </div>
-          <div className="stat-row">
-            <span className="stat-label">Com telefone</span>
-            <span className="stat-value">{stats.withPhone}</span>
+        </div>
+
+        <div className="sidebar-footer">
+          <div className="powered-by">
+            Powered by <strong>OpenAI</strong>
           </div>
         </div>
       </aside>
@@ -141,53 +197,78 @@ export default function Home() {
       {/* Main */}
       <main className="main">
         <header className="main-header">
-          <h1 className="main-title">Assistente de Vendas</h1>
+          <div className="header-left">
+            <button className="mobile-menu" onClick={() => setSidebarOpen(!sidebarOpen)}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 12h18M3 6h18M3 18h18"/>
+              </svg>
+            </button>
+            <h1 className="main-title">
+              <span className="title-icon">💬</span>
+              Assistente de Vendas
+            </h1>
+          </div>
           <div className="header-actions">
-            <button className="btn btn-ghost" onClick={() => setMessages([])}>
-              Limpar
+            <button className="btn btn-ghost" onClick={clearChat}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+              </svg>
+              Limpar Chat
             </button>
           </div>
         </header>
 
         <div className="chat-container" ref={chatRef}>
-          {messages.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8"/>
-                  <path d="m21 21-4.35-4.35"/>
-                </svg>
-              </div>
-              <h2 className="empty-title">Como posso ajudar?</h2>
-              <p className="empty-subtitle">
-                Consulte leads, crie emails de abordagem, exporte dados ou peca analises da sua base.
-              </p>
-              <div className="suggestions">
-                <button className="suggestion" onClick={() => handleSuggestion('Quem sao os leads de Florianopolis?')}>
-                  Leads de Florianopolis
-                </button>
-                <button className="suggestion" onClick={() => handleSuggestion('Criar email de abordagem para Anderson Cunha')}>
-                  Criar email de abordagem
-                </button>
-                <button className="suggestion" onClick={() => handleSuggestion('Exportar leads para Excel')}>
-                  Exportar para Excel
-                </button>
-                <button className="suggestion" onClick={() => handleSuggestion('Qual o telefone do Aidil Soares?')}>
-                  Buscar contato
-                </button>
+          {messages.length <= 1 ? (
+            <div className="welcome-state">
+              <div className="welcome-content">
+                <div className="welcome-icon">
+                  <span>Z</span>
+                </div>
+                <h2 className="welcome-title">Bem-vindo ao Z</h2>
+                <p className="welcome-subtitle">
+                  Seu assistente inteligente para gestão de leads. Faça perguntas em linguagem natural sobre sua base de dados.
+                </p>
+                
+                <div className="suggestions-grid">
+                  <button className="suggestion-card" onClick={() => handleSuggestion('Quem são os leads de Florianópolis?')}>
+                    <span className="suggestion-icon">🏙️</span>
+                    <span className="suggestion-text">Leads de Florianópolis</span>
+                  </button>
+                  <button className="suggestion-card" onClick={() => handleSuggestion('Criar email de abordagem para Adilson Tassi')}>
+                    <span className="suggestion-icon">✉️</span>
+                    <span className="suggestion-text">Criar email de abordagem</span>
+                  </button>
+                  <button className="suggestion-card" onClick={() => handleSuggestion('Exportar leads para Excel')}>
+                    <span className="suggestion-icon">📥</span>
+                    <span className="suggestion-text">Exportar para Excel</span>
+                  </button>
+                  <button className="suggestion-card" onClick={() => handleSuggestion('Mostrar estatísticas da base')}>
+                    <span className="suggestion-icon">📊</span>
+                    <span className="suggestion-text">Ver estatísticas</span>
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
             <div className="chat-messages">
               {messages.map((msg, idx) => (
-                <div key={idx} className="message">
+                <div key={idx} className={`message ${msg.role}`}>
                   <div className={`message-avatar ${msg.role}`}>
-                    {msg.role === 'user' ? 'U' : 'Z'}
+                    {msg.role === 'user' ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                      </svg>
+                    ) : 'Z'}
                   </div>
                   <div className="message-body">
                     <div className="message-header">
                       <span className="message-name">
-                        {msg.role === 'user' ? 'Voce' : 'Z'}
+                        {msg.role === 'user' ? 'Você' : 'Z'}
+                      </span>
+                      <span className="message-time">
+                        {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     <div 
@@ -195,9 +276,9 @@ export default function Home() {
                       dangerouslySetInnerHTML={{ __html: formatContent(msg.content) }}
                     />
                     {msg.leads && msg.leads.length > 0 && (
-                      <div className="leads-list">
+                      <div className="leads-grid">
                         {msg.leads.map((lead, lidx) => (
-                          <LeadCard key={lidx} lead={lead} />
+                          <LeadCard key={lidx} lead={lead} onAction={handleSuggestion} />
                         ))}
                       </div>
                     )}
@@ -205,30 +286,30 @@ export default function Home() {
                       <a 
                         href={msg.file.url} 
                         download={msg.file.name}
-                        className="download-link"
+                        className="download-btn"
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                           <polyline points="7 10 12 15 17 10"/>
                           <line x1="12" y1="15" x2="12" y2="3"/>
                         </svg>
-                        {msg.file.name}
+                        <span>Baixar {msg.file.name}</span>
                       </a>
                     )}
                   </div>
                 </div>
               ))}
               {loading && (
-                <div className="message">
+                <div className="message assistant">
                   <div className="message-avatar assistant">Z</div>
                   <div className="message-body">
                     <div className="message-header">
                       <span className="message-name">Z</span>
                     </div>
-                    <div className="loading-dots">
-                      <div className="loading-dot"></div>
-                      <div className="loading-dot"></div>
-                      <div className="loading-dot"></div>
+                    <div className="typing-indicator">
+                      <span></span>
+                      <span></span>
+                      <span></span>
                     </div>
                   </div>
                 </div>
@@ -241,103 +322,132 @@ export default function Home() {
           <form onSubmit={handleSubmit} className="input-wrapper">
             <div className="input-container">
               <textarea
+                ref={inputRef}
                 className="chat-input"
-                placeholder="Pergunte sobre leads, peca emails, exporte dados..."
+                placeholder="Pergunte sobre leads, peça emails, exporte dados..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={1}
                 disabled={loading}
               />
+              <button 
+                type="submit" 
+                className="send-btn" 
+                disabled={!input.trim() || loading}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                </svg>
+              </button>
             </div>
-            <button 
-              type="submit" 
-              className="send-btn" 
-              disabled={!input.trim() || loading}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="22" y1="2" x2="11" y2="13"/>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-              </svg>
-            </button>
           </form>
+          <div className="input-footer">
+            <span>Pressione Enter para enviar • Shift+Enter para nova linha</span>
+          </div>
         </div>
       </main>
     </div>
   )
 }
 
-function LeadCard({ lead }) {
+function LeadCard({ lead, onAction }) {
   const dados = lead.dados_basicos || lead.meta || {}
   const contato = lead.contato || {}
   const redes = lead.redes_sociais || {}
-  const abordagem = lead.abordagem || {}
   const meta = lead.meta || {}
 
-  const nome = dados.nome_completo || dados.nome_social || lead.nome || 'N/A'
+  const nome = dados.nome_completo || dados.nome_social || dados.empresa || 'Lead sem nome'
   const cargo = dados.cargo || ''
   const empresa = dados.empresa || ''
+  const segmento = dados.segmento || ''
   const score = meta.score_completude || ''
+  const cidade = contato.cidade || ''
+  const estado = contato.estado || ''
+
+  const getScoreColor = (score) => {
+    const num = parseInt(score)
+    if (num >= 70) return 'high'
+    if (num >= 40) return 'medium'
+    return 'low'
+  }
 
   return (
     <div className="lead-card">
       <div className="lead-header">
-        <div className="lead-info">
-          <h3>{nome}</h3>
-          {cargo && <div className="role">{cargo}</div>}
-          {empresa && <div className="company">{empresa}</div>}
+        <div className="lead-avatar">
+          {nome.charAt(0).toUpperCase()}
         </div>
-        {score && <div className="lead-score">{score}</div>}
+        <div className="lead-info">
+          <h3 className="lead-name">{nome}</h3>
+          {cargo && <div className="lead-role">{cargo}</div>}
+          {empresa && nome !== empresa && <div className="lead-company">{empresa}</div>}
+        </div>
+        {score && (
+          <div className={`lead-score ${getScoreColor(score)}`}>
+            {score}
+          </div>
+        )}
       </div>
-      <div className="lead-grid">
+      
+      <div className="lead-details">
         {(contato.email_corporativo || contato.email_pessoal) && (
           <div className="lead-field">
-            <span className="lead-field-label">Email</span>
-            <span className="lead-field-value">{contato.email_corporativo || contato.email_pessoal}</span>
+            <span className="field-icon">📧</span>
+            <span className="field-value">{contato.email_corporativo || contato.email_pessoal}</span>
           </div>
         )}
         {(contato.telefone_direto || contato.whatsapp) && (
           <div className="lead-field">
-            <span className="lead-field-label">Telefone</span>
-            <span className="lead-field-value">{contato.telefone_direto || contato.whatsapp}</span>
+            <span className="field-icon">📞</span>
+            <span className="field-value">{contato.telefone_direto || contato.whatsapp}</span>
+          </div>
+        )}
+        {(cidade || estado) && (
+          <div className="lead-field">
+            <span className="field-icon">📍</span>
+            <span className="field-value">{[cidade, estado].filter(Boolean).join(' / ')}</span>
+          </div>
+        )}
+        {segmento && (
+          <div className="lead-field">
+            <span className="field-icon">🏢</span>
+            <span className="field-value">{segmento}</span>
           </div>
         )}
         {redes.linkedin && (
           <div className="lead-field">
-            <span className="lead-field-label">LinkedIn</span>
-            <span className="lead-field-value">
-              <a href={redes.linkedin} target="_blank" rel="noopener">Ver perfil</a>
-            </span>
-          </div>
-        )}
-        {redes.instagram && (
-          <div className="lead-field">
-            <span className="lead-field-label">Instagram</span>
-            <span className="lead-field-value">{redes.instagram}</span>
-          </div>
-        )}
-        {(contato.cidade || contato.estado) && (
-          <div className="lead-field">
-            <span className="lead-field-label">Local</span>
-            <span className="lead-field-value">
-              {[contato.cidade, contato.estado].filter(Boolean).join(' / ')}
-            </span>
-          </div>
-        )}
-        {dados.segmento && (
-          <div className="lead-field">
-            <span className="lead-field-label">Segmento</span>
-            <span className="lead-field-value">{dados.segmento}</span>
+            <span className="field-icon">💼</span>
+            <a href={redes.linkedin} target="_blank" rel="noopener noreferrer" className="field-link">
+              Ver LinkedIn
+            </a>
           </div>
         )}
       </div>
-      {abordagem.script_abertura && (
-        <div className="lead-actions">
-          <button className="btn btn-ghost" onClick={() => navigator.clipboard.writeText(abordagem.script_abertura)}>
-            Copiar script
-          </button>
-        </div>
-      )}
+
+      <div className="lead-actions">
+        <button 
+          className="action-btn primary"
+          onClick={() => onAction(`Criar email de abordagem para ${nome}`)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <polyline points="22,6 12,13 2,6"/>
+          </svg>
+          Criar Email
+        </button>
+        <button 
+          className="action-btn"
+          onClick={() => onAction(`Detalhes completos de ${nome}`)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+          Ver Mais
+        </button>
+      </div>
     </div>
   )
 }
