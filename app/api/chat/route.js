@@ -4,7 +4,6 @@ import OpenAI from 'openai'
 // Import dos leads - adicione novos imports aqui
 import leadsData from '../../../data/leads.json'
 
-
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
@@ -195,15 +194,22 @@ export async function POST(request) {
     
     const response = completion.choices[0]?.message?.content || 'Sem resposta.'
     
-    // Verifica se a resposta menciona leads especificos
+    // Busca leads baseado na pergunta original do usuario (mais preciso)
+    const queryTerms = message.toLowerCase().split(/\s+/).filter(t => t.length > 2)
+    
     const mentionedLeads = leads.filter(lead => {
-      const nome = lead.dados_basicos?.nome_completo || lead.dados_basicos?.nome_social || ''
-      return nome && response.toLowerCase().includes(nome.toLowerCase().split(' ')[0])
+      const nome = (lead.dados_basicos?.nome_completo || lead.dados_basicos?.nome_social || '').toLowerCase()
+      const empresa = (lead.dados_basicos?.empresa || '').toLowerCase()
+      
+      // Verifica se algum termo da busca aparece no nome ou empresa
+      return queryTerms.some(term => 
+        nome.includes(term) || empresa.includes(term)
+      )
     })
     
     return NextResponse.json({
       response,
-      leads: mentionedLeads.slice(0, 5)
+      leads: mentionedLeads.slice(0, 3)
     })
     
   } catch (error) {
