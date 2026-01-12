@@ -227,17 +227,17 @@ async function callGPT(systemPrompt, userMessage, leadsContext = '', history = [
 
 const SYSTEM_PROMPT = `Você é o Z, um assistente de vendas inteligente e profissional. Você ajuda a equipe de vendas a gerenciar e interagir com leads.
 
-REGRAS IMPORTANTES (ANTI-ALUCINAÇÃO):
-1. NUNCA invente informações sobre leads. Use APENAS os dados fornecidos no contexto.
-2. Se não encontrar um lead ou informação, diga claramente que não encontrou.
-3. Seja preciso com nomes, emails, telefones - não invente dados.
-4. Se o usuário perguntar sobre um lead que não está no contexto, diga que não encontrou na base.
-5. Formate suas respostas de forma clara e profissional.
-6. Use **negrito** para destacar informações importantes.
-7. Seja direto e objetivo, sem enrolação.
-8. Quando listar leads, inclua as informações mais relevantes de cada um.
-9. Para criar emails de abordagem, use os dados reais do lead fornecido.
-10. Nunca diga que vai "verificar" ou "consultar" - você já tem acesso aos dados no contexto.
+REGRAS CRÍTICAS (ANTI-ALUCINAÇÃO - OBRIGATÓRIO):
+1. NUNCA, EM HIPÓTESE ALGUMA, invente informações sobre leads.
+2. Use EXCLUSIVAMENTE os dados fornecidos no contexto abaixo.
+3. Se o contexto estiver vazio ou não contiver o lead solicitado, responda: "Não encontrei esse lead na base de dados."
+4. NÃO liste leads aleatórios quando não encontrar o solicitado.
+5. NÃO sugira leads similares se não foram solicitados.
+6. Seja PRECISO com nomes, emails, telefones - NUNCA invente.
+7. Se não tiver certeza, diga que não encontrou.
+8. NUNCA diga "vou verificar" ou "deixa eu consultar" - você já tem todos os dados disponíveis.
+9. Se o usuário pedir informações sobre alguém e essa pessoa NÃO estiver no contexto, diga claramente que não encontrou.
+10. NÃO faça suposições sobre dados que não estão explícitos no contexto.
 
 CAPACIDADES:
 - Buscar leads por nome, cidade, segmento ou qualquer critério
@@ -250,7 +250,8 @@ CAPACIDADES:
 FORMATO DE RESPOSTA:
 - Use markdown para formatação
 - Destaque informações importantes em **negrito**
-- Seja conciso mas completo`
+- Seja conciso mas completo
+- Quando não encontrar, seja claro e direto: "Não encontrei [nome] na base."`
 
 export async function POST(request) {
   try {
@@ -456,12 +457,25 @@ REGRAS:
     
     // 9. BUSCA POR NOME (quem é, dados de, perfil de, etc)
     const namePatterns = [
+      // "quem é X"
       /(?:quem\s+(?:e|é)\s+(?:o\s+|a\s+)?)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
-      /(?:dados?|perfil|informacoes?|detalhes?)\s+(?:d[oa]\s+)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      // "dados/perfil/informações/detalhes do/da X"
+      /(?:dados?|perfil|informacoes?|informações?|detalhes?)\s+(?:d[oa]\s+)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      // "me traga/traça/dê informações sobre X" ou "informações sobre X"
+      /(?:me\s+)?(?:traga|traça|de|dê|mostre|mostra)\s+(?:mais\s+)?(?:informações?|informacoes?|dados?|detalhes?)\s+(?:sobre|d[oa])\s+(?:o\s+|a\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      // "informações melhores sobre X" ou "mais informações sobre X"
+      /(?:informações?|informacoes?|dados?)\s+(?:melhores?|mais|completas?)\s+(?:sobre|d[oa])\s+(?:o\s+|a\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      // "sobre o/a X" (quando é uma pergunta direta)
+      /(?:sobre|acerca)\s+(?:o\s+|a\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      // "tem/existe/teria lead chamado/com nome X"
       /(?:tem|existe|temos|teria|ha|há|voce\s+tem|você\s+tem|voce\s+teria|você\s+teria)\s+(?:algum\s+)?(?:lead\s+)?(?:chamad[oa]\s+|com\s+(?:o\s+)?nome\s+)["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      // "tem/existe lead chamado X"
       /(?:tem|existe|temos|teria)\s+(?:algum\s+)?(?:lead\s+)?chamad[oa]\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      // "buscar/procurar/encontrar X"
       /(?:buscar|procurar|encontrar|achar)\s+(?:lead\s+)?(?:chamad[oa]\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      // "lead X"
       /lead\s+["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i,
+      // "com o nome X"
       /com\s+(?:o\s+)?nome\s+(?:de\s+)?["']?([A-Za-záéíóúãõçêâôÁÉÍÓÚÃÕÇÊÂÔ\s]+?)["']?(?:\?|$)/i
     ]
     
@@ -533,26 +547,10 @@ REGRAS:
       })
     }
     
-    // Se não encontrou nada, usa GPT para responder de forma útil
-    const statsContext = `Base de dados: ${leads.length} leads total, ${stats.withEmail} com email, ${stats.withPhone} com telefone. Cidades: ${stats.cities.slice(0, 5).join(', ')}.`
-    
-    const gptResponse = await callGPT(
-      SYSTEM_PROMPT + '\n\nIMPORTANTE: Não há leads correspondentes à busca do usuário. Informe isso claramente e sugira alternativas.',
-      message,
-      statsContext,
-      history
-    )
-    
-    if (gptResponse) {
-      return NextResponse.json({
-        response: gptResponse,
-        leads: []
-      })
-    }
-    
-    // Resposta padrão se GPT não estiver disponível
+    // Se não encontrou nada, NÃO usa GPT para evitar alucinação
+    // Resposta direta e clara sem IA
     return NextResponse.json({
-      response: `Não encontrei resultados para sua busca.\n\n**Tente:**\n- Buscar por nome: "Quem é João Silva?"\n- Buscar por cidade: "Leads de Florianópolis"\n- Listar todos: "Mostrar todos os leads"\n- Exportar: "Exportar para Excel"`,
+      response: `❌ **Não encontrei resultados** para sua busca.\n\nA base possui **${leads.length} leads**. Tente:\n- Buscar por nome: "Quem é João Silva?"\n- Buscar por cidade: "Leads de Florianópolis"\n- Buscar por segmento: "Leads de publicidade"\n- Listar todos: "Mostrar todos os leads"\n- Exportar: "Exportar para Excel"`,
       leads: []
     })
     
